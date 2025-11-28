@@ -120,7 +120,7 @@ async function confirmPrompt(summaryText) {
 
     let estimatedGasPerTx = 120000;
     try {
-      const sampleAmountUnits = tokenBalanceUnits.gt(0) ? ethers.parseUnits("0.01", decimals) : ethers.parseUnits("0.0001", decimals);
+      const sampleAmountUnits = tokenBalanceUnits > 0n ? ethers.parseUnits("0.01", decimals) : ethers.parseUnits("0.0001", decimals);
       estimatedGasPerTx = await contract.estimateGas.transfer(toAddress, sampleAmountUnits);
       estimatedGasPerTx = Number(estimatedGasPerTx.toString());
     } catch (e) {
@@ -128,7 +128,8 @@ async function confirmPrompt(summaryText) {
     }
     console.log("Estimated gas per tx:", estimatedGasPerTx);
 
-    const gasPrice = await provider.getGasPrice();
+    const feeData = await provider.getFeeData();
+    const gasPrice = feeData.gasPrice || ethers.parseUnits("1", "gwei");
     const estTotalGasCost = gasPrice * BigInt(Math.ceil(estimatedGasPerTx * args.count));
     console.log("Current gasPrice (wei):", gasPrice.toString());
     console.log("Estimated total gas cost (wei):", estTotalGasCost.toString(), " (~", ethers.formatEther(estTotalGasCost), "ETH )");
@@ -138,7 +139,7 @@ async function confirmPrompt(summaryText) {
     }
 
     const planned = [];
-    let sumUnits = ethers.Zero;
+    let sumUnits = 0n;
     for (let i = 0; i < args.count; ++i) {
       const rndStr = randomDecimalString(args.min, args.max, 4);
       const units = ethers.parseUnits(rndStr, decimals);
@@ -177,7 +178,7 @@ SUMMARY
     const txLog = [];
     for (let i = 0; i < planned.length; ++i) {
       const { display, units } = planned[i];
-      if (units.eq(0)) {
+      if (units === 0n) {
         console.warn(`Skipping tx #${i + 1} because units == 0`);
         continue;
       }
@@ -192,13 +193,14 @@ SUMMARY
           let gasLimit = estimatedGasPerTx;
           try {
             const estimate = await contract.estimateGas.transfer(toAddress, units, { from: sender });
-            gasLimit = Math.max(estimate.toNumber() + 2000, 80000);
+            gasLimit = Math.max(Number(estimate) + 2000, 80000);
             gasLimit = Math.min(gasLimit, 250000);
           } catch (e) {
             gasLimit = Math.min(Math.max(estimatedGasPerTx + 2000, 80000), 250000);
           }
 
-          const currentGasPrice = await provider.getGasPrice();
+          const currentFeeData = await provider.getFeeData();
+          const currentGasPrice = currentFeeData.gasPrice || ethers.parseUnits("1", "gwei");
 
           const txRequest = await contract.populateTransaction.transfer(toAddress, units);
           txRequest.nonce = nonce;
