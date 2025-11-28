@@ -3,6 +3,11 @@
   "module": "index.js",
   "type": "module",
   "private": true,
+  "scripts": {
+    "start": "node index.js",
+    "server": "node api/index.js",
+    "dev": "node --watch api/index.js"
+  },
   "devDependencies": {
     "@types/bun": "latest"
   },
@@ -12,6 +17,7 @@
   "dependencies": {
     "dotenv": "^17.2.3",
     "ethers": "^6.15.0",
+    "express": "^5.1.0",
     "minimist": "^1.2.8"
   }
 }
