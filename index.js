@@ -1,88 +1,12 @@
 #!/usr/bin/env node
-/**
- * index.js
- *
- * Usage example:
- *  export PRIVATE_KEY="0x..."
- *  node index.js --rpc https://rpc.linea.build \
- *      --token 0x67454b41bAF8D29751Cc64f60E3C62B5634567A4 \
- *      --to 0xDESTINATION_WALLET \
- *      --count 20 --min 0.01 --max 0.5
- *
- * Flags:
- *  --dry-run    : do not broadcast transactions
- *  --yes        : skip confirmation prompt
- *  --delay      : seconds between txs (default 1.0)
- *  --retries    : max retries per tx (default 3)
- *  --log        : path prefix for log files (default linea-20)
- */
-
 import { ethers } from "ethers";
 import dotenv from "dotenv";
 import fs from "fs";
-import minimist from "minimist";
+import { parseArgs } from "./src/lib/args.js";
+import { sleep, randomDecimalString, confirmPrompt } from "./src/lib/common.js";
+import { ERC20_ABI, CHAIN_ID_LINEA } from "./src/constant/constant.js";
 
 dotenv.config();
-
-const ERC20_ABI = [
-  "function decimals() view returns (uint8)",
-  "function balanceOf(address) view returns (uint256)",
-  "function transfer(address to, uint256 value) returns (bool)",
-];
-
-const CHAIN_ID_LINEA = 59144;
-
-function parseArgs() {
-  const args = minimist(process.argv.slice(2), {
-    string: ["rpc", "token", "to", "min", "max", "log"],
-    boolean: ["dry-run", "yes"],
-    default: { count: 20, min: "0.01", max: "0.5", delay: 1.0, retries: 3, log: "safe_linea_sender" },
-    alias: { h: "help" },
-  });
-
-  if (args.help) {
-    console.log("See script header for usage.");
-    process.exit(0);
-  }
-
-  if (!args.rpc || !args.token || !args.to) {
-    console.error("Missing required flags: --rpc, --token, --to");
-    process.exit(1);
-  }
-
-  args.count = parseInt(args.count, 10);
-  args.delay = parseFloat(args.delay);
-  args.retries = parseInt(args.retries, 10);
-
-  args.min = args.min.toString();
-  args.max = args.max.toString();
-
-  return args;
-}
-
-function sleep(ms) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-function randomDecimalString(minStr, maxStr, decimalsToRound = 4) {
-  const min = Number(minStr);
-  const max = Number(maxStr);
-  const r = Math.random() * (max - min) + min;
-  // round to decimalsToRound places as string
-  return r.toFixed(decimalsToRound);
-}
-
-async function confirmPrompt(summaryText) {
-  if (process.env.CI || process.argv.includes("--yes")) return true;
-  console.log(summaryText);
-  process.stdout.write("Type YES to proceed (or anything else to abort): ");
-  return new Promise((resolve) => {
-    process.stdin.setEncoding("utf8");
-    process.stdin.once("data", (data) => {
-      resolve(String(data || "").trim() === "YES");
-    });
-  });
-}
 
 (async function main() {
   try {
@@ -104,21 +28,21 @@ async function confirmPrompt(summaryText) {
 
     const wallet = new ethers.Wallet(privateKey, provider);
     const sender = await wallet.getAddress();
-    console.log("Using wallet:", sender);
+    if (args.verbose) console.log("Using wallet:", sender);
 
     const tokenAddress = ethers.getAddress(args.token);
     const toAddress = ethers.getAddress(args.to);
     const contract = new ethers.Contract(tokenAddress, ERC20_ABI, wallet);
 
     const decimals = Number(await contract.decimals());
-    console.log("Token decimals:", decimals);
+    if (args.verbose) console.log("Token decimals:", decimals);
 
     const tokenBalanceUnits = await contract.balanceOf(sender);
     const tokenBalanceFormatted = ethers.formatUnits(tokenBalanceUnits, decimals);
-    console.log("Token balance:", tokenBalanceFormatted);
+    if (args.verbose) console.log("Token balance:", tokenBalanceFormatted);
 
     const nativeBalanceWei = await provider.getBalance(sender);
-    console.log("Native balance (ETH-ish):", ethers.formatEther(nativeBalanceWei));
+    if (args.verbose) console.log("Native balance (ETH-ish):", ethers.formatEther(nativeBalanceWei));
 
     let estimatedGasPerTx = 120000;
     try {
@@ -126,18 +50,18 @@ async function confirmPrompt(summaryText) {
       const gasEstimate = await contract.transfer.estimateGas(toAddress, sampleAmountUnits);
       estimatedGasPerTx = Number(gasEstimate);
     } catch (e) {
-      console.warn("Could not estimate gas precisely, using fallback:", estimatedGasPerTx, "Error:", e.message);
+      if (args.verbose) console.warn("Could not estimate gas precisely, using fallback:", estimatedGasPerTx, "Error:", e.message);
     }
-    console.log("Estimated gas per tx:", estimatedGasPerTx);
+    if (args.verbose) console.log("Estimated gas per tx:", estimatedGasPerTx);
 
     const feeData = await provider.getFeeData();
     const gasPrice = feeData.gasPrice || ethers.parseUnits("1", "gwei");
     const estTotalGasCost = gasPrice * BigInt(Math.ceil(estimatedGasPerTx * args.count));
-    console.log("Current gasPrice (wei):", gasPrice.toString());
-    console.log("Estimated total gas cost (wei):", estTotalGasCost.toString(), " (~", ethers.formatEther(estTotalGasCost), "ETH )");
+    if (args.verbose) console.log("Current gasPrice (wei):", gasPrice.toString());
+    if (args.verbose) console.log("Estimated total gas cost (wei):", estTotalGasCost.toString(), " (~", ethers.formatEther(estTotalGasCost), "ETH )");
 
     if (nativeBalanceWei < estTotalGasCost) {
-      console.warn("Warning: native balance is less than estimated total gas cost — transactions may fail.");
+      if (args.verbose) console.warn("Warning: native balance is less than estimated total gas cost — transactions may fail.");
     }
 
     const planned = [];
@@ -148,7 +72,7 @@ async function confirmPrompt(summaryText) {
       planned.push({ display: rndStr, units });
       sumUnits = sumUnits + units;
     }
-    console.log("Total planned token amount (units):", sumUnits.toString(), " -> tokens:", ethers.formatUnits(sumUnits, decimals));
+    if (args.verbose) console.log("Total planned token amount (units):", sumUnits.toString(), " -> tokens:", ethers.formatUnits(sumUnits, decimals));
     if (sumUnits > tokenBalanceUnits) {
       console.error("Planned total exceeds token balance. Aborting.");
       process.exit(1);
@@ -181,7 +105,7 @@ SUMMARY
     for (let i = 0; i < planned.length; ++i) {
       const { display, units } = planned[i];
       if (units === 0n) {
-        console.warn(`Skipping tx #${i + 1} because units == 0`);
+        if (args.verbose) console.warn(`Skipping tx #${i + 1} because units == 0`);
         continue;
       }
 
@@ -215,15 +139,15 @@ SUMMARY
 
           const signed = await wallet.signTransaction(txRequest);
           const sent = await provider.broadcastTransaction(signed);
-          console.log(`Sent tx #${i + 1} amount=${display} tokens (units=${units.toString()}) nonce=${nonce} hash=${sent.hash}`);
+          if (args.verbose) console.log(`Sent tx #${i + 1} amount=${display} tokens (units=${units.toString()}) nonce=${nonce} hash=${sent.hash}`);
 
           const receipt = await sent.wait(1).catch((err) => {
-            console.warn(`Waiting for receipt for tx ${sent.hash} failed/timeout:`, err.message || err);
+            if (args.verbose) console.warn(`Waiting for receipt for tx ${sent.hash} failed/timeout:`, err.message || err);
             return null;
           });
 
           if (receipt) {
-            console.log(`Confirmed tx #${i + 1} in block ${receipt.blockNumber} status=${receipt.status}`);
+            if (args.verbose) console.log(`Confirmed tx #${i + 1} in block ${receipt.blockNumber} status=${receipt.status}`);
           } else {
             console.warn(`No receipt yet for tx ${sent.hash}. Continueing - check this hash manually.`);
           }
@@ -231,7 +155,6 @@ SUMMARY
           txLog.push({ index: i + 1, amount: display, units: units.toString(), nonce, hash: sent.hash });
           success = true;
 
-          // delay between txs
           if (args.delay && args.delay > 0) await sleep(Math.round(args.delay * 1000));
         } catch (err) {
           console.error(`Attempt ${attempt} failed for tx #${i + 1}:`, err.message || err);
