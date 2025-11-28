@@ -282,9 +282,11 @@ app.get("/health", (req, res) => {
 });
 
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
-  console.log(`Health check: http://localhost:${PORT}/health`);
-  console.log(`Start batch: POST http://localhost:${PORT}/batch`);
-  console.log(`Check status: GET http://localhost:${PORT}/batch/:jobId`);
+const HOST = process.env.HOST || '0.0.0.0';
+
+app.listen(PORT, HOST, () => {
+  console.log(`Server running on ${HOST}:${PORT}`);
+  console.log(`Health check: http://${HOST}:${PORT}/health`);
+  console.log(`Start batch: POST http://${HOST}:${PORT}/batch`);
+  console.log(`Check status: GET http://${HOST}:${PORT}/batch/:jobId`);
 });
