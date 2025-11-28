@@ -1,0 +1,23 @@
+version: '3.8'
+
+services:
+  linea-20:
+    build: .
+    container_name: linea-20
+    restart: unless-stopped
+    ports:
+      - "${PORT:-3000}:3000"
+    environment:
+      - PRIVATE_KEY=${PRIVATE_KEY}
+      - API_KEY=${API_KEY}
+      - PORT=${PORT:-3000}
+    env_file:
+      - .env
+    volumes:
+      - ./logs:/app/logs
+    networks:
+      - linea-network
+
+networks:
+  linea-network:
+    driver: bridge

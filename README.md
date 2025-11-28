@@ -2,8 +2,6 @@
 
 Send multiple ERC20 token transfers on Linea.
 
-[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2Fsavioruz%2Flinea-20&env=PRIVATE_KEY,API_KEY,PORT&envDefaults=%7B%22PRIVATE_KEY%22%3A%220xYOUR_PRIVATE_KEY%22%2C%22API_KEY%22%3A%22YOUR_API_KEY%22%2C%22PORT%22%3A%223000%22%7D&project-name=linea-20&repository-name=linea-20)
-
 ## Setup
 
 ```bash
