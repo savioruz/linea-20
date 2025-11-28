@@ -17,10 +17,13 @@
  *  --log        : path prefix for log files (default linea-20)
  */
 
-const { ethers } = require("ethers");
-require("dotenv").config();
-const fs = require("fs");
-const path = require("path");
+import { ethers } from "ethers";
+import dotenv from "dotenv";
+import fs from "fs";
+import path from "path";
+import minimist from "minimist";
+
+dotenv.config();
 
 const ERC20_ABI = [
   "function decimals() view returns (uint8)",
@@ -31,7 +34,7 @@ const ERC20_ABI = [
 const CHAIN_ID_LINEA = 59144;
 
 function parseArgs() {
-  const args = require("minimist")(process.argv.slice(2), {
+  const args = minimist(process.argv.slice(2), {
     string: ["rpc", "token", "to", "min", "max", "log"],
     boolean: ["dry-run", "yes"],
     default: { count: 20, min: "0.01", max: "0.5", delay: 1.0, retries: 3, log: "safe_linea_sender" },
