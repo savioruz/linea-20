@@ -20,7 +20,6 @@
 import { ethers } from "ethers";
 import dotenv from "dotenv";
 import fs from "fs";
-import path from "path";
 import minimist from "minimist";
 
 dotenv.config();
@@ -124,10 +123,10 @@ async function confirmPrompt(summaryText) {
     let estimatedGasPerTx = 120000;
     try {
       const sampleAmountUnits = tokenBalanceUnits > 0n ? ethers.parseUnits("0.01", decimals) : ethers.parseUnits("0.0001", decimals);
-      estimatedGasPerTx = await contract.estimateGas.transfer(toAddress, sampleAmountUnits);
-      estimatedGasPerTx = Number(estimatedGasPerTx.toString());
+      const gasEstimate = await contract.transfer.estimateGas(toAddress, sampleAmountUnits);
+      estimatedGasPerTx = Number(gasEstimate);
     } catch (e) {
-      console.warn("Could not estimate gas precisely, using fallback:", estimatedGasPerTx);
+      console.warn("Could not estimate gas precisely, using fallback:", estimatedGasPerTx, "Error:", e.message);
     }
     console.log("Estimated gas per tx:", estimatedGasPerTx);
 
@@ -195,7 +194,7 @@ SUMMARY
 
           let gasLimit = estimatedGasPerTx;
           try {
-            const estimate = await contract.estimateGas.transfer(toAddress, units, { from: sender });
+            const estimate = await contract.transfer.estimateGas(toAddress, units);
             gasLimit = Math.max(Number(estimate) + 2000, 80000);
             gasLimit = Math.min(gasLimit, 250000);
           } catch (e) {
