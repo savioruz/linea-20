@@ -202,14 +202,17 @@ SUMMARY
           const currentFeeData = await provider.getFeeData();
           const currentGasPrice = currentFeeData.gasPrice || ethers.parseUnits("1", "gwei");
 
-          const txRequest = await contract.populateTransaction.transfer(toAddress, units);
-          txRequest.nonce = nonce;
-          txRequest.gasLimit = ethers.BigInt(gasLimit);
-          txRequest.gasPrice = currentGasPrice;
-          txRequest.chainId = CHAIN_ID_LINEA;
+          const txRequest = {
+            to: tokenAddress,
+            data: contract.interface.encodeFunctionData("transfer", [toAddress, units]),
+            nonce: nonce,
+            gasLimit: BigInt(gasLimit),
+            gasPrice: currentGasPrice,
+            chainId: CHAIN_ID_LINEA,
+          };
 
           const signed = await wallet.signTransaction(txRequest);
-          const sent = await provider.sendTransaction(signed);
+          const sent = await provider.broadcastTransaction(signed);
           console.log(`Sent tx #${i + 1} amount=${display} tokens (units=${units.toString()}) nonce=${nonce} hash=${sent.hash}`);
 
           const receipt = await sent.wait(1).catch((err) => {
