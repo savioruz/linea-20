@@ -17,6 +17,21 @@ app.use(express.json());
 
 const jobs = new Map();
 
+const privateApiKey = (req, res, next) => {
+  const apiKey = req.headers['x-api-key'];
+  const validApiKey = config.privateApiKey;
+
+  if (!validApiKey) {
+    return res.status(500).json({ error: "PRIVATE_API_KEY not configured on server" });
+  }
+  
+  if (!apiKey || apiKey !== validApiKey) {
+    return res.status(401).json({ error: "Unauthorized: Invalid or missing API key" });
+  }
+
+  next();
+}
+
 const apiKeyAuth = (req, res, next) => {
   const apiKey = req.headers['x-api-key'];
   const validApiKey = config.apiKey;
@@ -71,7 +86,7 @@ async function executeBatch(jobId, config) {
 }
 
 // POST /batch - Start a new batch transaction
-app.post("/batch", apiKeyAuth, async (req, res) => {
+app.post("/batch", privateApiKey, async (req, res) => {
   try {
     const { rpc, token, to, count = 20, min = "0.01", max = "0.5", delay = 1.0, retries = 3, logDir = "logs" } = req.body;
 
@@ -154,7 +169,7 @@ app.get("/batch", apiKeyAuth, (req, res) => {
 });
 
 // DELETE /batch/:jobId - Delete a job from memory
-app.delete("/batch/:jobId", apiKeyAuth, (req, res) => {
+app.delete("/batch/:jobId", privateApiKey, (req, res) => {
   const deleted = jobs.delete(req.params.jobId);
   
   if (!deleted) {
@@ -165,7 +180,7 @@ app.delete("/batch/:jobId", apiKeyAuth, (req, res) => {
 });
 
 // POST /interact/sign - Sign a message
-app.post("/interact/sign", apiKeyAuth, async (req, res) => {
+app.post("/interact/sign", privateApiKey, async (req, res) => {
   try {
     const { message } = req.body;
 
@@ -185,7 +200,7 @@ app.post("/interact/sign", apiKeyAuth, async (req, res) => {
 });
 
 // POST /interact/sign-typed - Sign typed data (EIP-712)
-app.post("/interact/sign-typed", apiKeyAuth, async (req, res) => {
+app.post("/interact/sign-typed", privateApiKey, async (req, res) => {
   try {
     const { domain, types, value } = req.body;
 
@@ -207,7 +222,7 @@ app.post("/interact/sign-typed", apiKeyAuth, async (req, res) => {
 });
 
 // POST /interact/call - Call contract (read-only)
-app.post("/interact/call", apiKeyAuth, async (req, res) => {
+app.post("/interact/call", privateApiKey, async (req, res) => {
   try {
     const { rpc, contract, abi, method, params = [] } = req.body;
 
@@ -230,7 +245,7 @@ app.post("/interact/call", apiKeyAuth, async (req, res) => {
 });
 
 // POST /interact/send - Send transaction to contract
-app.post("/interact/send", apiKeyAuth, async (req, res) => {
+app.post("/interact/send", privateApiKey, async (req, res) => {
   try {
     const { rpc, contract, abi, method, params = [], value, gasLimit, gasPrice } = req.body;
 
@@ -257,7 +272,7 @@ app.post("/interact/send", apiKeyAuth, async (req, res) => {
 });
 
 // POST /interact/send-raw - Send raw transaction
-app.post("/interact/send-raw", apiKeyAuth, async (req, res) => {
+app.post("/interact/send-raw", privateApiKey, async (req, res) => {
   try {
     const { rpc, to, data, value, gasLimit, chainId } = req.body;
 
@@ -307,7 +322,7 @@ app.post("/interact/batch-send-raw", apiKeyAuth, async (req, res) => {
 });
 
 // GET /interact/wallet - Get wallet info
-app.get("/interact/wallet", apiKeyAuth, async (req, res) => {
+app.get("/interact/wallet", privateApiKey, async (req, res) => {
   try {
     const { rpc } = req.query;
 
