@@ -55,10 +55,7 @@ async function executeBatch(jobId, config) {
     job.startTime = Date.now();
 
     const result = await executeBatchTransactions(
-      {
-        privateKey: config.privateKey,
-        ...config
-      },
+      config,
       {
         onStart: ({ wallet }) => {
           job.wallet = wallet;
@@ -86,12 +83,12 @@ async function executeBatch(jobId, config) {
 }
 
 // POST /batch - Start a new batch transaction
-app.post("/batch", privateApiKey, async (req, res) => {
+app.post("/batch", apiKeyAuth, async (req, res) => {
   try {
-    const { rpc, token, to, count = 20, min = "0.01", max = "0.5", delay = 1.0, retries = 3, logDir = "logs" } = req.body;
+    const { privateKey, rpc, token, to, count = 20, min = "0.01", max = "0.5", delay = 1.0, retries = 3, logDir = "logs" } = req.body;
 
-    if (!rpc || !token || !to) {
-      return res.status(400).json({ error: "Missing required fields: rpc, token, to" });
+    if (!privateKey || !rpc || !token || !to) {
+      return res.status(400).json({ error: "Missing required fields: privateKey, rpc, token, to" });
     }
 
     const jobId = `job_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
@@ -99,14 +96,14 @@ app.post("/batch", privateApiKey, async (req, res) => {
     jobs.set(jobId, {
       id: jobId,
       status: "queued",
-      config: { rpc, token, to, count, min, max, delay, retries, logDir },
+      config: { privateKey, rpc, token, to, count, min, max, delay, retries, logDir },
       createdAt: Date.now(),
       completed: 0,
       transactions: []
     });
 
     // Execute in background
-    executeBatch(jobId, { rpc, token, to, count, min, max, delay, retries, logDir });
+    executeBatch(jobId, { privateKey, rpc, token, to, count, min, max, delay, retries, logDir });
 
     res.json({ 
       jobId, 
@@ -169,7 +166,7 @@ app.get("/batch", apiKeyAuth, (req, res) => {
 });
 
 // DELETE /batch/:jobId - Delete a job from memory
-app.delete("/batch/:jobId", privateApiKey, (req, res) => {
+app.delete("/batch/:jobId", apiKeyAuth, (req, res) => {
   const deleted = jobs.delete(req.params.jobId);
   
   if (!deleted) {
