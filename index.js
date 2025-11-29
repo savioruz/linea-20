@@ -415,20 +415,37 @@ app.post("/interact/generate-wallets", apiKeyAuth, async (req, res) => {
 // POST /interact/send-eth - Send ETH to address (async job)
 app.post("/interact/send-eth", apiKeyAuth, async (req, res) => {
   try {
-    const { privateKey, rpc, to, amount } = req.body;
+    const { privateKey, rpc, to, amount, transactions, delay = 0, retries = 3 } = req.body;
 
-    if (!privateKey || !rpc || !to || !amount) {
-      return res.status(400).json({ error: "Missing required fields: privateKey, rpc, to, amount" });
+    if (!privateKey || !rpc) {
+      return res.status(400).json({ error: "Missing required fields: privateKey, rpc" });
+    }
+
+    if (!to && !transactions) {
+      return res.status(400).json({ error: "Either 'to' and 'amount' OR 'transactions' array is required" });
+    }
+
+    if (to && !amount) {
+      return res.status(400).json({ error: "Amount is required when 'to' is provided" });
+    }
+
+    if (transactions && (!Array.isArray(transactions) || transactions.length === 0)) {
+      return res.status(400).json({ error: "Transactions must be a non-empty array" });
     }
 
     const jobId = `job_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    
+    const total = transactions ? transactions.length : 1;
     
     jobs.set(jobId, {
       id: jobId,
       type: "send-eth",
       status: "queued",
-      config: { privateKey, rpc, to, amount },
-      createdAt: Date.now()
+      config: { privateKey, rpc, to, amount, transactions, delay, retries },
+      createdAt: Date.now(),
+      completed: 0,
+      total,
+      results: []
     });
 
     // Execute in background
@@ -438,12 +455,23 @@ app.post("/interact/send-eth", apiKeyAuth, async (req, res) => {
         job.status = "running";
         job.startTime = Date.now();
 
-        const result = await sendEth({
-          privateKey,
-          rpc,
-          to,
-          amount
-        });
+        const result = await sendEth(
+          {
+            privateKey,
+            rpc,
+            to,
+            amount,
+            transactions,
+            delay,
+            retries
+          },
+          {
+            onProgress: ({ completed, total, transaction }) => {
+              job.completed = completed;
+              job.results.push(transaction);
+            }
+          }
+        );
 
         job.status = "completed";
         job.result = result;
@@ -458,7 +486,8 @@ app.post("/interact/send-eth", apiKeyAuth, async (req, res) => {
     res.json({ 
       jobId, 
       status: "queued",
-      message: "ETH transfer started",
+      message: transactions ? `Batch ETH transfer started (${total} transactions)` : "ETH transfer started",
+      total,
       statusUrl: `/batch/${jobId}`
     });
   } catch (err) {

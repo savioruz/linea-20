@@ -1,5 +1,37 @@
 import { ethers } from "ethers";
 
+// Nonce management to prevent concurrent transaction conflicts
+const nonceTracker = new Map(); // Map of address -> { nonce, promise }
+
+async function getNextNonce(provider, address) {
+  const key = address.toLowerCase();
+  
+  if (!nonceTracker.has(key)) {
+    const nonce = await provider.getTransactionCount(address, "pending");
+    nonceTracker.set(key, { nonce, promise: Promise.resolve() });
+    return nonce;
+  }
+
+  const tracker = nonceTracker.get(key);
+  
+  // Wait for any pending nonce allocation
+  await tracker.promise;
+  
+  // Allocate the next nonce
+  const currentNonce = tracker.nonce;
+  tracker.nonce++;
+  
+  return currentNonce;
+}
+
+function releaseNonce(address) {
+  // Clean up after some time to prevent memory leaks
+  const key = address.toLowerCase();
+  setTimeout(() => {
+    nonceTracker.delete(key);
+  }, 60000); // Clear after 1 minute
+}
+
 export async function signMessage(config) {
   const { privateKey, message } = config;
 
@@ -164,13 +196,18 @@ export async function getWalletInfo(config) {
   };
 }
 
-export async function sendEth(config) {
+export async function sendEth(config, callbacks = {}) {
   const {
     privateKey,
     rpc,
     to,
-    amount
+    amount,
+    transactions, // Optional: array of {to, amount} for batch
+    delay = 0,
+    retries = 3
   } = config;
+
+  const { onProgress } = callbacks;
 
   if (!privateKey) {
     throw new Error("PRIVATE_KEY is required");
@@ -179,29 +216,121 @@ export async function sendEth(config) {
   const provider = new ethers.JsonRpcProvider(rpc);
   const wallet = new ethers.Wallet(privateKey, provider);
 
-  const nonce = await provider.getTransactionCount(wallet.address, "pending");
-  const feeData = await provider.getFeeData();
-  
-  const gasPrice = feeData.gasPrice ? (feeData.gasPrice * 120n) / 100n : undefined;
+  if (transactions && Array.isArray(transactions)) {
+    const results = [];
+    const failed = [];
+    const total = transactions.length;
 
-  const tx = await wallet.sendTransaction({
-    to,
-    value: ethers.parseEther(amount),
-    nonce,
-    gasPrice
-  });
+    for (let i = 0; i < transactions.length; i++) {
+      const tx = transactions[i];
+      let attempt = 0;
+      let success = false;
 
-  const receipt = await tx.wait();
+      while (attempt < retries && !success) {
+        attempt++;
+        try {
+          const nonce = await getNextNonce(provider, wallet.address);
+          const feeData = await provider.getFeeData();
+          const gasPrice = feeData.gasPrice ? (feeData.gasPrice * 120n) / 100n : undefined;
 
-  return {
-    hash: tx.hash,
-    from: wallet.address,
-    to,
-    amount,
-    blockNumber: receipt.blockNumber,
-    status: receipt.status,
-    gasUsed: receipt.gasUsed.toString()
-  };
+          const sentTx = await wallet.sendTransaction({
+            to: tx.to,
+            value: ethers.parseEther(tx.amount),
+            nonce,
+            gasPrice
+          });
+
+          const receipt = await sentTx.wait();
+
+          const result = {
+            index: i + 1,
+            hash: sentTx.hash,
+            from: wallet.address,
+            to: tx.to,
+            amount: tx.amount,
+            blockNumber: receipt.blockNumber,
+            status: receipt.status,
+            gasUsed: receipt.gasUsed.toString()
+          };
+
+          results.push(result);
+          success = true;
+
+          if (onProgress) onProgress({ completed: i + 1, total, transaction: result });
+
+          if (delay > 0 && i < transactions.length - 1) {
+            await new Promise(resolve => setTimeout(resolve, delay * 1000));
+          }
+
+        } catch (err) {
+          if (attempt >= retries) {
+            failed.push({
+              index: i + 1,
+              to: tx.to,
+              amount: tx.amount,
+              error: err.message
+            });
+            break;
+          }
+
+          const backoff = Math.min(2000 * attempt, 10000);
+          await new Promise(resolve => setTimeout(resolve, backoff));
+        }
+      }
+    }
+
+    releaseNonce(wallet.address);
+
+    return {
+      success: failed.length === 0,
+      total,
+      successful: results.length,
+      failed: failed.length,
+      results,
+      failedTransactions: failed
+    };
+  }
+
+  // Handle single transaction
+  let attempt = 0;
+  while (attempt < retries) {
+    attempt++;
+    try {
+      const nonce = await getNextNonce(provider, wallet.address);
+      const feeData = await provider.getFeeData();
+      const gasPrice = feeData.gasPrice ? (feeData.gasPrice * 120n) / 100n : undefined;
+
+      const tx = await wallet.sendTransaction({
+        to,
+        value: ethers.parseEther(amount),
+        nonce,
+        gasPrice
+      });
+
+      const receipt = await tx.wait();
+
+      releaseNonce(wallet.address);
+
+      return {
+        hash: tx.hash,
+        from: wallet.address,
+        to,
+        amount,
+        blockNumber: receipt.blockNumber,
+        status: receipt.status,
+        gasUsed: receipt.gasUsed.toString()
+      };
+
+    } catch (err) {
+      if (attempt >= retries) {
+        releaseNonce(wallet.address);
+        throw err;
+      }
+
+      const backoff = Math.min(2000 * attempt, 10000);
+      await new Promise(resolve => setTimeout(resolve, backoff));
+    }
+  }
 }
 
 export async function batchSendRawTransactions(config, callbacks = {}) {
