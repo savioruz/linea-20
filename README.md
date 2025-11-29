@@ -284,6 +284,8 @@ x-api-key: YOUR_SECRET_KEY
       "value": "0"
     }
   ],
+  "gasLimit": "300000",
+  "gasPrice": "50",
   "count": 5,
   "delay": 2.0,
   "retries": 3
@@ -294,6 +296,8 @@ Parameters:
 - `privateKey` - Your Private Key (required)
 - `rpc` - RPC (required)
 - `transactions` - Array of transaction objects (required)
+- `gasLimit` - wei units of gas limit
+- `gasPrice` - wei price (optional)
 - `count` - Number of times to repeat each transaction (default: 1)
 - `delay` - Seconds between transactions (default: 1.0)
 - `retries` - Max retry attempts per transaction (default: 3)

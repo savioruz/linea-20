@@ -172,6 +172,8 @@ export async function batchSendRawTransactions(config, callbacks = {}) {
     count = 1,
     delay = 1.0,
     retries = 3,
+    gasLimit,
+    gasPrice,
     verbose = false
   } = config;
 
@@ -212,12 +214,21 @@ export async function batchSendRawTransactions(config, callbacks = {}) {
 
         const feeData = await provider.getFeeData();
         
+        let finalGasPrice;
+        if (tx.gasPrice) {
+          finalGasPrice = ethers.parseUnits(tx.gasPrice, "gwei");
+        } else if (gasPrice) {
+          finalGasPrice = ethers.parseUnits(gasPrice, "gwei");
+        } else {
+          finalGasPrice = feeData.gasPrice;
+        }
+
         const txRequest = {
           to: tx.to,
           data: tx.data,
           value: tx.value && tx.value !== "0" ? ethers.parseEther(tx.value) : 0n,
-          gasLimit: tx.gasLimit ? BigInt(tx.gasLimit) : undefined,
-          gasPrice: feeData.gasPrice,
+          gasLimit: tx.gasLimit ? BigInt(tx.gasLimit) : (gasLimit ? BigInt(gasLimit) : undefined),
+          gasPrice: finalGasPrice,
           chainId: tx.chainId || (await provider.getNetwork()).chainId
         };
 
