@@ -373,3 +373,30 @@ Response:
   ]
 }
 ```
+
+**Send Eth**
+```bash
+POST /interact/send-eth
+Content-Type: application/json
+x-api-key: YOUR_SECRET_KEY
+
+{
+  "privateKey": "0x...",
+  "rpc": "https://rpc.linea.build",
+  "to": "0x...",
+  "amount": "0.01"
+}
+```
+
+Response:
+```json
+{
+  "hash": "0x...",
+  "from": "0xYourAddress",
+  "to": "0xRecipientAddress",
+  "amount": "0.1",
+  "blockNumber": 123456,
+  "status": 1,
+  "gasUsed": "21000"
+}
+```

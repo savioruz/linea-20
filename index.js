@@ -411,6 +411,39 @@ app.post("/interact/generate-wallets", apiKeyAuth, async (req, res) => {
   }
 });
 
+// POST /interact/send-eth - Send ETH to address
+app.post("/interact/send-eth", apiKeyAuth, async (req, res) => {
+  try {
+    const { privateKey, rpc, to, amount } = req.body;
+
+    if (!privateKey || !rpc || !to || !amount) {
+      return res.status(400).json({ error: "Missing required fields: privateKey, rpc, to, amount" });
+    }
+
+    const provider = new ethers.JsonRpcProvider(rpc);
+    const wallet = new ethers.Wallet(privateKey, provider);
+
+    const tx = await wallet.sendTransaction({
+      to,
+      value: ethers.parseEther(amount)
+    });
+
+    const receipt = await tx.wait();
+
+    res.json({
+      hash: tx.hash,
+      from: wallet.address,
+      to,
+      amount,
+      blockNumber: receipt.blockNumber,
+      status: receipt.status,
+      gasUsed: receipt.gasUsed.toString()
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // Health check
 app.get("/health", (req, res) => {
   res.json({ 
