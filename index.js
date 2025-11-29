@@ -11,6 +11,7 @@ import {
   batchSendRawTransactions,
   getWalletInfo 
 } from "./src/lib/interact.js";
+import { ethers } from "ethers";
 
 const app = express();
 app.use(express.json());
