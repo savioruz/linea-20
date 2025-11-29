@@ -375,6 +375,7 @@ Response:
 ```
 
 **Send Eth**
+single tx
 ```bash
 POST /interact/send-eth
 Content-Type: application/json
@@ -385,6 +386,24 @@ x-api-key: YOUR_SECRET_KEY
   "rpc": "https://rpc.linea.build",
   "to": "0x...",
   "amount": "0.01"
+}
+```
+
+multiple tx
+```bash
+POST /interact/send-eth
+Content-Type: application/json
+x-api-key: YOUR_SECRET_KEY
+
+{
+  "privateKey": "0x...",
+  "rpc": "https://rpc.linea.build",
+  "transactions":[
+    {"to":"0xABC...","amount":"0.1"},
+    {"to":"0xDEF...","amount":"0.2"},
+    {"to":"0x123...","amount":"0.05"}
+  ],
+  "delay": 0.5
 }
 ```
 
