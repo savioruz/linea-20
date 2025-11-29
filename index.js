@@ -296,7 +296,7 @@ app.post("/interact/send-raw", privateApiKey, async (req, res) => {
   }
 });
 
-// POST /interact/batch-send-raw - Send multiple raw transactions
+// POST /interact/batch-send-raw - Send multiple raw transactions (async job)
 app.post("/interact/batch-send-raw", apiKeyAuth, async (req, res) => {
   try {
     const { privateKey, rpc, transactions, count = 1, delay = 1.0, retries = 3 } = req.body;
@@ -305,17 +305,60 @@ app.post("/interact/batch-send-raw", apiKeyAuth, async (req, res) => {
       return res.status(400).json({ error: "Missing required fields: privateKey, rpc, transactions (array)" });
     }
 
-    const result = await batchSendRawTransactions({
-      privateKey: privateKey,
-      rpc,
-      transactions,
-      count,
-      delay,
-      retries,
-      verbose: false
+    const jobId = `job_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    
+    jobs.set(jobId, {
+      id: jobId,
+      type: "batch-send-raw",
+      status: "queued",
+      config: { privateKey, rpc, transactions, count, delay, retries },
+      createdAt: Date.now(),
+      completed: 0,
+      total: transactions.length * count,
+      results: []
     });
 
-    res.json(result);
+    // Execute in background
+    (async () => {
+      const job = jobs.get(jobId);
+      try {
+        job.status = "running";
+        job.startTime = Date.now();
+
+        const result = await batchSendRawTransactions(
+          {
+            privateKey,
+            rpc,
+            transactions,
+            count,
+            delay,
+            retries,
+            verbose: false
+          },
+          {
+            onProgress: ({ completed, total, transaction }) => {
+              job.completed = completed;
+              job.results.push(transaction);
+            }
+          }
+        );
+
+        job.status = "completed";
+        job.summary = result;
+        job.endTime = Date.now();
+      } catch (err) {
+        job.status = "failed";
+        job.error = err.message;
+        job.endTime = Date.now();
+      }
+    })();
+
+    res.json({ 
+      jobId, 
+      status: "queued",
+      message: "Batch send-raw started",
+      statusUrl: `/batch/${jobId}`
+    });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
