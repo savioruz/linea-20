@@ -411,7 +411,7 @@ app.post("/interact/generate-wallets", apiKeyAuth, async (req, res) => {
   }
 });
 
-// POST /interact/send-eth - Send ETH to address
+// POST /interact/send-eth - Send ETH to address (async job)
 app.post("/interact/send-eth", apiKeyAuth, async (req, res) => {
   try {
     const { privateKey, rpc, to, amount } = req.body;
@@ -420,24 +420,56 @@ app.post("/interact/send-eth", apiKeyAuth, async (req, res) => {
       return res.status(400).json({ error: "Missing required fields: privateKey, rpc, to, amount" });
     }
 
-    const provider = new ethers.JsonRpcProvider(rpc);
-    const wallet = new ethers.Wallet(privateKey, provider);
-
-    const tx = await wallet.sendTransaction({
-      to,
-      value: ethers.parseEther(amount)
+    const jobId = `job_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    
+    jobs.set(jobId, {
+      id: jobId,
+      type: "send-eth",
+      status: "queued",
+      config: { privateKey, rpc, to, amount },
+      createdAt: Date.now()
     });
 
-    const receipt = await tx.wait();
+    // Execute in background
+    (async () => {
+      const job = jobs.get(jobId);
+      try {
+        job.status = "running";
+        job.startTime = Date.now();
 
-    res.json({
-      hash: tx.hash,
-      from: wallet.address,
-      to,
-      amount,
-      blockNumber: receipt.blockNumber,
-      status: receipt.status,
-      gasUsed: receipt.gasUsed.toString()
+        const provider = new ethers.JsonRpcProvider(rpc);
+        const wallet = new ethers.Wallet(privateKey, provider);
+
+        const tx = await wallet.sendTransaction({
+          to,
+          value: ethers.parseEther(amount)
+        });
+
+        const receipt = await tx.wait();
+
+        job.status = "completed";
+        job.result = {
+          hash: tx.hash,
+          from: wallet.address,
+          to,
+          amount,
+          blockNumber: receipt.blockNumber,
+          status: receipt.status,
+          gasUsed: receipt.gasUsed.toString()
+        };
+        job.endTime = Date.now();
+      } catch (err) {
+        job.status = "failed";
+        job.error = err.message;
+        job.endTime = Date.now();
+      }
+    })();
+
+    res.json({ 
+      jobId, 
+      status: "queued",
+      message: "ETH transfer started",
+      statusUrl: `/batch/${jobId}`
     });
   } catch (err) {
     res.status(500).json({ error: err.message });

@@ -391,12 +391,9 @@ x-api-key: YOUR_SECRET_KEY
 Response:
 ```json
 {
-  "hash": "0x...",
-  "from": "0xYourAddress",
-  "to": "0xRecipientAddress",
-  "amount": "0.1",
-  "blockNumber": 123456,
-  "status": 1,
-  "gasUsed": "21000"
+  "jobId": "job_1732896000000_abc123",
+  "status": "queued",
+  "message": "ETH transfer started",
+  "statusUrl": "/batch/job_1732896000000_abc123"
 }
 ```
