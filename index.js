@@ -9,6 +9,7 @@ import {
   sendTransaction, 
   sendRawTransaction,
   batchSendRawTransactions,
+  sendEth,
   getWalletInfo 
 } from "./src/lib/interact.js";
 import { ethers } from "ethers";
@@ -437,33 +438,15 @@ app.post("/interact/send-eth", apiKeyAuth, async (req, res) => {
         job.status = "running";
         job.startTime = Date.now();
 
-        const provider = new ethers.JsonRpcProvider(rpc);
-        const wallet = new ethers.Wallet(privateKey, provider);
-
-        const nonce = await provider.getTransactionCount(wallet.address, "latest");
-        const feeData = await provider.getFeeData();
-        
-        const gasPrice = feeData.gasPrice ? (feeData.gasPrice * 110n) / 100n : undefined;
-
-        const tx = await wallet.sendTransaction({
+        const result = await sendEth({
+          privateKey,
+          rpc,
           to,
-          value: ethers.parseEther(amount),
-          nonce,
-          gasPrice
+          amount
         });
 
-        const receipt = await tx.wait();
-
         job.status = "completed";
-        job.result = {
-          hash: tx.hash,
-          from: wallet.address,
-          to,
-          amount,
-          blockNumber: receipt.blockNumber,
-          status: receipt.status,
-          gasUsed: receipt.gasUsed.toString()
-        };
+        job.result = result;
         job.endTime = Date.now();
       } catch (err) {
         job.status = "failed";

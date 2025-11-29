@@ -164,6 +164,46 @@ export async function getWalletInfo(config) {
   };
 }
 
+export async function sendEth(config) {
+  const {
+    privateKey,
+    rpc,
+    to,
+    amount
+  } = config;
+
+  if (!privateKey) {
+    throw new Error("PRIVATE_KEY is required");
+  }
+
+  const provider = new ethers.JsonRpcProvider(rpc);
+  const wallet = new ethers.Wallet(privateKey, provider);
+
+  const nonce = await provider.getTransactionCount(wallet.address, "pending");
+  const feeData = await provider.getFeeData();
+  
+  const gasPrice = feeData.gasPrice ? (feeData.gasPrice * 120n) / 100n : undefined;
+
+  const tx = await wallet.sendTransaction({
+    to,
+    value: ethers.parseEther(amount),
+    nonce,
+    gasPrice
+  });
+
+  const receipt = await tx.wait();
+
+  return {
+    hash: tx.hash,
+    from: wallet.address,
+    to,
+    amount,
+    blockNumber: receipt.blockNumber,
+    status: receipt.status,
+    gasUsed: receipt.gasUsed.toString()
+  };
+}
+
 export async function batchSendRawTransactions(config, callbacks = {}) {
   const {
     privateKey,
