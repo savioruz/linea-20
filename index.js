@@ -440,9 +440,16 @@ app.post("/interact/send-eth", apiKeyAuth, async (req, res) => {
         const provider = new ethers.JsonRpcProvider(rpc);
         const wallet = new ethers.Wallet(privateKey, provider);
 
+        const nonce = await provider.getTransactionCount(wallet.address, "latest");
+        const feeData = await provider.getFeeData();
+        
+        const gasPrice = feeData.gasPrice ? (feeData.gasPrice * 110n) / 100n : undefined;
+
         const tx = await wallet.sendTransaction({
           to,
-          value: ethers.parseEther(amount)
+          value: ethers.parseEther(amount),
+          nonce,
+          gasPrice
         });
 
         const receipt = await tx.wait();
