@@ -342,3 +342,34 @@ Response:
   "network": "linea"
 }
 ```
+
+**Generate new wallets:**
+```bash
+POST /interact/generate-wallets
+Content-Type: application/json
+x-api-key: YOUR_SECRET_KEY
+
+{
+  "count": 10
+}
+```
+
+Parameters:
+- `count` - Number of wallets to generate (default: 1, max: 100)
+
+Response:
+```json
+{
+  "count": 10,
+  "wallets": [
+    {
+      "address": "0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb",
+      "privateKey": "0x..."
+    },
+    {
+      "address": "0x123...",
+      "privateKey": "0x..."
+    }
+  ]
+}
+```
