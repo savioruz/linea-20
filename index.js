@@ -383,6 +383,33 @@ app.get("/interact/wallet", privateApiKey, async (req, res) => {
   }
 });
 
+// POST /interact/generate-wallets - Generate new wallets
+app.post("/interact/generate-wallets", apiKeyAuth, async (req, res) => {
+  try {
+    const { count = 1 } = req.body;
+
+    if (count < 1 || count > 100) {
+      return res.status(400).json({ error: "Count must be between 1 and 100" });
+    }
+
+    const wallets = [];
+    for (let i = 0; i < count; i++) {
+      const wallet = ethers.Wallet.createRandom();
+      wallets.push({
+        address: wallet.address,
+        privateKey: wallet.privateKey
+      });
+    }
+
+    res.json({
+      count: wallets.length,
+      wallets
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // Health check
 app.get("/health", (req, res) => {
   res.json({ 
