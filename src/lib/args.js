@@ -1,6 +1,6 @@
 import minimist from "minimist";
 
-export function parseArgs() {
+export function parseTransactionArgs() {
   const args = minimist(process.argv.slice(2), {
     string: ["rpc", "token", "to", "min", "max", "log"],
     boolean: ["dry-run", "yes", "verbose"],
@@ -41,5 +41,47 @@ export function parseArgs() {
   args.min = args.min.toString();
   args.max = args.max.toString();
 
+  return args;
+}
+
+export function parseInteractArgs() {
+  const args = minimist(process.argv.slice(2), {
+    string: ["action", "rpc", "to", "data", "message", "value", "gasLimit", "chainId"],
+    alias: { h: "help", a: "action" }
+  });
+  
+  if (args.help) {
+    console.log(`
+  Actions:
+    sign          - Sign a message
+    send-raw      - Send raw transaction with data
+    wallet        - Get wallet info
+  
+  Examples:
+    # Sign a message
+    bun dapp --action sign --message "Hello World"
+  
+    # Send raw transaction (like the POH sign)
+    bun dapp --action send-raw \\
+      --rpc https://rpc.linea.build \\
+      --to 0x7aD0B9D518041A8d42589Eb5BFbCC6B8630b13E8 \\
+      --data 0x4e71d92d \\
+      --chainId 59144
+  
+    # Get wallet info
+    bun dapp --action wallet --rpc https://rpc.linea.build
+  
+  Options:
+    --action      Action to perform (sign, send-raw, wallet)
+    --message     Message to sign
+    --rpc         RPC URL
+    --to          Contract address
+    --data        Transaction data (hex)
+    --value       ETH value to send (optional)
+    --gasLimit    Gas limit (optional)
+    --chainId     Chain ID (optional)
+  `);
+    process.exit(0);
+  }
   return args;
 }

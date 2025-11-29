@@ -1,12 +1,16 @@
 #!/usr/bin/env node
 import express from "express";
-import { ethers } from "ethers";
-import dotenv from "dotenv";
-import fs from "fs";
-import { sleep, randomDecimalString } from "./src/lib/common.js";
-import { ERC20_ABI, CHAIN_ID_LINEA } from "./src/constant/constant.js";
-
-dotenv.config();
+import { executeBatchTransactions } from "./src/lib/transaction.js";
+import { config } from "./src/config/config.js";
+import { 
+  signMessage, 
+  signTypedData, 
+  callContract, 
+  sendTransaction, 
+  sendRawTransaction,
+  batchSendRawTransactions,
+  getWalletInfo 
+} from "./src/lib/interact.js";
 
 const app = express();
 app.use(express.json());
@@ -15,7 +19,7 @@ const jobs = new Map();
 
 const apiKeyAuth = (req, res, next) => {
   const apiKey = req.headers['x-api-key'];
-  const validApiKey = process.env.API_KEY;
+  const validApiKey = config.apiKey;
 
   if (!validApiKey) {
     return res.status(500).json({ error: "API_KEY not configured on server" });
@@ -35,141 +39,29 @@ async function executeBatch(jobId, config) {
     job.status = "running";
     job.startTime = Date.now();
 
-    const privateKey = process.env.PRIVATE_KEY;
-    if (!privateKey) {
-      throw new Error("PRIVATE_KEY not set in environment");
-    }
-
-    const provider = new ethers.JsonRpcProvider(config.rpc);
-    await provider.getBlockNumber();
-
-    const wallet = new ethers.Wallet(privateKey, provider);
-    const sender = await wallet.getAddress();
-    job.wallet = sender;
-
-    const tokenAddress = ethers.getAddress(config.token);
-    const toAddress = ethers.getAddress(config.to);
-    const contract = new ethers.Contract(tokenAddress, ERC20_ABI, wallet);
-
-    const decimals = Number(await contract.decimals());
-    const tokenBalanceUnits = await contract.balanceOf(sender);
-    const nativeBalanceWei = await provider.getBalance(sender);
-
-    job.balances = {
-      token: ethers.formatUnits(tokenBalanceUnits, decimals),
-      native: ethers.formatEther(nativeBalanceWei)
-    };
-
-    let estimatedGasPerTx = 120000;
-    try {
-      const sampleAmountUnits = tokenBalanceUnits > 0n ? ethers.parseUnits("0.01", decimals) : ethers.parseUnits("0.0001", decimals);
-      const gasEstimate = await contract.transfer.estimateGas(toAddress, sampleAmountUnits);
-      estimatedGasPerTx = Number(gasEstimate);
-    } catch (e) {
-      job.warnings = job.warnings || [];
-      job.warnings.push(`Could not estimate gas: ${e.message}`);
-    }
-
-    const feeData = await provider.getFeeData();
-    const gasPrice = feeData.gasPrice || ethers.parseUnits("1", "gwei");
-
-    const planned = [];
-    let sumUnits = 0n;
-    for (let i = 0; i < config.count; ++i) {
-      const rndStr = randomDecimalString(config.min, config.max, 4);
-      const units = ethers.parseUnits(rndStr, decimals);
-      planned.push({ display: rndStr, units });
-      sumUnits = sumUnits + units;
-    }
-
-    if (sumUnits > tokenBalanceUnits) {
-      throw new Error("Planned total exceeds token balance");
-    }
-
-    job.planned = {
-      total: ethers.formatUnits(sumUnits, decimals),
-      count: config.count
-    };
-
-    const txLog = [];
-    for (let i = 0; i < planned.length; ++i) {
-      const { display, units } = planned[i];
-      if (units === 0n) continue;
-
-      let attempt = 0;
-      let success = false;
-      while (attempt < config.retries && !success) {
-        attempt++;
-        try {
-          const nonce = await provider.getTransactionCount(sender, "pending");
-
-          let gasLimit = estimatedGasPerTx;
-          try {
-            const estimate = await contract.transfer.estimateGas(toAddress, units);
-            gasLimit = Math.max(Number(estimate) + 2000, 80000);
-            gasLimit = Math.min(gasLimit, 250000);
-          } catch (e) {
-            gasLimit = Math.min(Math.max(estimatedGasPerTx + 2000, 80000), 250000);
-          }
-
-          const currentFeeData = await provider.getFeeData();
-          const currentGasPrice = currentFeeData.gasPrice || ethers.parseUnits("1", "gwei");
-
-          const txRequest = {
-            to: tokenAddress,
-            data: contract.interface.encodeFunctionData("transfer", [toAddress, units]),
-            nonce: nonce,
-            gasLimit: BigInt(gasLimit),
-            gasPrice: currentGasPrice,
-            chainId: CHAIN_ID_LINEA,
-          };
-
-          const signed = await wallet.signTransaction(txRequest);
-          const sent = await provider.broadcastTransaction(signed);
-
-          const receipt = await sent.wait(1).catch(() => null);
-
-          txLog.push({ 
-            index: i + 1, 
-            amount: display, 
-            units: units.toString(), 
-            nonce, 
-            hash: sent.hash,
-            blockNumber: receipt?.blockNumber,
-            status: receipt?.status
-          });
-          success = true;
-
-          if (config.delay && config.delay > 0) await sleep(Math.round(config.delay * 1000));
-        } catch (err) {
-          if (attempt >= config.retries) {
-            throw new Error(`Max retries reached for tx #${i + 1}: ${err.message}`);
-          }
-          const backoff = Math.min(5000 * attempt, 30000);
-          await sleep(backoff);
+    const result = await executeBatchTransactions(
+      {
+        privateKey: config.privateKey,
+        ...config
+      },
+      {
+        onStart: ({ wallet }) => {
+          job.wallet = wallet;
+        },
+        onProgress: ({ completed, total, transaction }) => {
+          job.completed = completed;
+          job.transactions = job.transactions || [];
+          job.transactions.push(transaction);
         }
       }
-
-      job.completed = i + 1;
-      job.transactions = txLog;
-    }
-
-    const logDir = config.logDir || "logs";
-    const timestamp = Math.floor(Date.now() / 1000);
-    const logPath = `${logDir}/${timestamp}.txlog.json`;
-    if (!fs.existsSync(logDir)) {
-      fs.mkdirSync(logDir, { recursive: true });
-    }
-    fs.writeFileSync(logPath, JSON.stringify(txLog, null, 2));
-
-    const endTime = Date.now();
-    const duration = ((endTime - job.startTime) / 1000).toFixed(2);
+    );
 
     job.status = "completed";
-    job.duration = duration;
-    job.logPath = logPath;
-    job.transactions = txLog;
-    job.endTime = endTime;
+    job.duration = result.duration;
+    job.logPath = result.logPath;
+    job.balances = result.balances;
+    job.transactions = result.transactions;
+    job.endTime = Date.now();
 
   } catch (err) {
     job.status = "failed";
@@ -272,6 +164,168 @@ app.delete("/batch/:jobId", apiKeyAuth, (req, res) => {
   res.json({ message: "Job deleted" });
 });
 
+// POST /interact/sign - Sign a message
+app.post("/interact/sign", apiKeyAuth, async (req, res) => {
+  try {
+    const { message } = req.body;
+
+    if (!message) {
+      return res.status(400).json({ error: "Missing required field: message" });
+    }
+
+    const result = await signMessage({
+      privateKey: config.privateKey,
+      message
+    });
+
+    res.json(result);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /interact/sign-typed - Sign typed data (EIP-712)
+app.post("/interact/sign-typed", apiKeyAuth, async (req, res) => {
+  try {
+    const { domain, types, value } = req.body;
+
+    if (!domain || !types || !value) {
+      return res.status(400).json({ error: "Missing required fields: domain, types, value" });
+    }
+
+    const result = await signTypedData({
+      privateKey: config.privateKey,
+      domain,
+      types,
+      value
+    });
+
+    res.json(result);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /interact/call - Call contract (read-only)
+app.post("/interact/call", apiKeyAuth, async (req, res) => {
+  try {
+    const { rpc, contract, abi, method, params = [] } = req.body;
+
+    if (!rpc || !contract || !abi || !method) {
+      return res.status(400).json({ error: "Missing required fields: rpc, contract, abi, method" });
+    }
+
+    const result = await callContract({
+      rpc,
+      contract,
+      abi,
+      method,
+      params
+    });
+
+    res.json({ result: result.toString() });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /interact/send - Send transaction to contract
+app.post("/interact/send", apiKeyAuth, async (req, res) => {
+  try {
+    const { rpc, contract, abi, method, params = [], value, gasLimit, gasPrice } = req.body;
+
+    if (!rpc || !contract || !abi || !method) {
+      return res.status(400).json({ error: "Missing required fields: rpc, contract, abi, method" });
+    }
+
+    const result = await sendTransaction({
+      privateKey: config.privateKey,
+      rpc,
+      contract,
+      abi,
+      method,
+      params,
+      value,
+      gasLimit,
+      gasPrice
+    });
+
+    res.json(result);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /interact/send-raw - Send raw transaction
+app.post("/interact/send-raw", apiKeyAuth, async (req, res) => {
+  try {
+    const { rpc, to, data, value, gasLimit, chainId } = req.body;
+
+    if (!rpc || !to || !data) {
+      return res.status(400).json({ error: "Missing required fields: rpc, to, data" });
+    }
+
+    const result = await sendRawTransaction({
+      privateKey: config.privateKey,
+      rpc,
+      to,
+      data,
+      value,
+      gasLimit,
+      chainId
+    });
+
+    res.json(result);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /interact/batch-send-raw - Send multiple raw transactions
+app.post("/interact/batch-send-raw", apiKeyAuth, async (req, res) => {
+  try {
+    const { privateKey, rpc, transactions, count = 1, delay = 1.0, retries = 3 } = req.body;
+
+    if (!privateKey || !rpc || !transactions || !Array.isArray(transactions)) {
+      return res.status(400).json({ error: "Missing required fields: privateKey, rpc, transactions (array)" });
+    }
+
+    const result = await batchSendRawTransactions({
+      privateKey: privateKey,
+      rpc,
+      transactions,
+      count,
+      delay,
+      retries,
+      verbose: false
+    });
+
+    res.json(result);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /interact/wallet - Get wallet info
+app.get("/interact/wallet", apiKeyAuth, async (req, res) => {
+  try {
+    const { rpc } = req.query;
+
+    if (!rpc) {
+      return res.status(400).json({ error: "Missing required query param: rpc" });
+    }
+
+    const result = await getWalletInfo({
+      privateKey: config.privateKey,
+      rpc
+    });
+
+    res.json(result);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // Health check
 app.get("/health", (req, res) => {
   res.json({ 
@@ -281,8 +335,8 @@ app.get("/health", (req, res) => {
   });
 });
 
-const PORT = process.env.PORT || 3000;
-const HOST = process.env.HOST || '0.0.0.0';
+const HOST = config.host;
+const PORT = config.port;
 
 app.listen(PORT, HOST, () => {
   console.log(`Server running on ${HOST}:${PORT}`);

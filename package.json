@@ -4,9 +4,10 @@
   "type": "module",
   "private": true,
   "scripts": {
-    "start": "node cmd/index.js",
     "server": "node index.js",
-    "dev": "node --watch index.js"
+    "dev": "node --watch index.js",
+    "cmd:interact": "node cmd/interact/index.js",
+    "cmd:transaction": "node cmd/transaction/index.js"
   },
   "devDependencies": {
     "@types/bun": "latest"
