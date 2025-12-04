@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import express from "express";
+import cors from "cors";
 import { executeBatchTransactions } from "./src/lib/transaction.js";
 import { config } from "./src/config/config.js";
 import { 
@@ -15,6 +16,7 @@ import {
 import { ethers } from "ethers";
 
 const app = express();
+app.use(cors());
 app.use(express.json());
 
 const jobs = new Map();
