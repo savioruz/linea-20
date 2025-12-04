@@ -338,7 +338,6 @@ export async function batchSendRawTransactions(config, callbacks = {}) {
     privateKey,
     rpc,
     transactions,
-    count = 1,
     delay = 1.0,
     retries = 3,
     gasLimit,
@@ -363,21 +362,23 @@ export async function batchSendRawTransactions(config, callbacks = {}) {
   const results = [];
   const failed = [];
 
-  // Repeat each transaction 'count' times
-  const totalTransactions = transactions.length * count;
+  // Calculate total based on each transaction's count
+  const totalTransactions = transactions.reduce((sum, tx) => sum + (tx.count || 1), 0);
   let txNumber = 0;
 
-  for (let c = 0; c < count; c++) {
-    for (let i = 0; i < transactions.length; i++) {
+  for (let i = 0; i < transactions.length; i++) {
+    const tx = transactions[i];
+    const count = tx.count || 1;
+
+    for (let c = 0; c < count; c++) {
       txNumber++;
-      const tx = transactions[i];
       let attempt = 0;
       let success = false;
 
       while (attempt < retries && !success) {
         attempt++;
         try {
-          if (verbose) console.log(`\nSending tx #${txNumber}/${totalTransactions} (round ${c + 1}/${count}, tx ${i + 1}/${transactions.length})`);
+          if (verbose) console.log(`\nSending tx #${txNumber}/${totalTransactions} (tx ${i + 1}/${transactions.length}, repeat ${c + 1}/${count})`);
           if (verbose) console.log("To:", tx.to);
           if (verbose) console.log("Data:", tx.data);
 
@@ -417,8 +418,9 @@ export async function batchSendRawTransactions(config, callbacks = {}) {
         
           const result = {
             index: txNumber,
-            round: c + 1,
             txIndex: i + 1,
+            repeat: c + 1,
+            totalRepeats: count,
             hash: sent.hash,
             from: wallet.address,
             to: tx.to,
@@ -444,8 +446,8 @@ export async function batchSendRawTransactions(config, callbacks = {}) {
           if (attempt >= retries) {
             const failedTx = {
               index: txNumber,
-              round: c + 1,
               txIndex: i + 1,
+              repeat: c + 1,
               to: tx.to,
               data: tx.data,
               error: err.message
@@ -469,7 +471,6 @@ export async function batchSendRawTransactions(config, callbacks = {}) {
   const summary = {
     success: failed.length === 0,
     total: totalTransactions,
-    count: count,
     uniqueTransactions: transactions.length,
     successful: results.length,
     failed: failed.length,

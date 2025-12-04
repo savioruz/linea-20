@@ -276,17 +276,18 @@ x-api-key: YOUR_SECRET_KEY
     {
       "to": "0xCONTRACT_ADDRESS",
       "data": "0x4e71d92d",
-      "value": "0.1"
+      "value": "0.1",
+      "count": 5
     },
     {
       "to": "0xANOTHER_CONTRACT",
       "data": "0x...",
-      "value": "0"
+      "value": "0",
+      "count": 3
     }
   ],
   "gasLimit": "300000",
   "gasPrice": "50",
-  "count": 5,
   "delay": 2.0,
   "retries": 3
 }
@@ -294,30 +295,50 @@ x-api-key: YOUR_SECRET_KEY
 
 Parameters:
 - `privateKey` - Your Private Key (required)
-- `rpc` - RPC (required)
+- `rpc` - RPC endpoint (required)
 - `transactions` - Array of transaction objects (required)
-- `gasLimit` - wei units of gas limit
-- `gasPrice` - wei price (optional)
-- `count` - Number of times to repeat each transaction (default: 1)
+  - Each transaction can have its own `count` parameter (default: 1)
+  - `to` - Contract address (required)
+  - `data` - Transaction data (required)
+  - `value` - ETH amount to send (optional, default: "0")
+  - `count` - Number of times to repeat this specific transaction (optional, default: 1)
+  - `gasLimit` - Gas limit for this transaction (optional)
+  - `gasPrice` - Gas price in gwei for this transaction (optional)
+- `gasLimit` - Global gas limit fallback (optional)
+- `gasPrice` - Global gas price fallback in gwei (optional)
 - `delay` - Seconds between transactions (default: 1.0)
 - `retries` - Max retry attempts per transaction (default: 3)
 
 Response:
 ```json
 {
+  "jobId": "job_1732896000000_abc123",
+  "status": "queued",
+  "message": "Batch send-raw started",
+  "total": 8,
+  "statusUrl": "/batch/job_1732896000000_abc123"
+}
+```
+
+Job status response:
+```json
+{
   "success": true,
-  "total": 10,
-  "count": 5,
+  "total": 8,
   "uniqueTransactions": 2,
-  "successful": 10,
+  "successful": 8,
   "failed": 0,
   "duration": "45s",
   "results": [
     {
       "index": 1,
-      "round": 1,
       "txIndex": 1,
+      "repeat": 1,
+      "totalRepeats": 5,
       "hash": "0x...",
+      "from": "0xYourAddress",
+      "to": "0xCONTRACT_ADDRESS",
+      "blockNumber": 123456,
       "status": 1,
       "gasUsed": "85000"
     }
@@ -374,8 +395,9 @@ Response:
 }
 ```
 
-**Send Eth**
-single tx
+**Send ETH:**
+
+Single transaction:
 ```bash
 POST /interact/send-eth
 Content-Type: application/json
@@ -389,7 +411,7 @@ x-api-key: YOUR_SECRET_KEY
 }
 ```
 
-multiple tx
+Batch transactions:
 ```bash
 POST /interact/send-eth
 Content-Type: application/json
@@ -398,14 +420,24 @@ x-api-key: YOUR_SECRET_KEY
 {
   "privateKey": "0x...",
   "rpc": "https://rpc.linea.build",
-  "transactions":[
-    {"to":"0xABC...","amount":"0.1"},
-    {"to":"0xDEF...","amount":"0.2"},
-    {"to":"0x123...","amount":"0.05"}
+  "transactions": [
+    {"to": "0xABC...", "amount": "0.1"},
+    {"to": "0xDEF...", "amount": "0.2"},
+    {"to": "0x123...", "amount": "0.05"}
   ],
-  "delay": 0.5
+  "delay": 0.5,
+  "retries": 3
 }
 ```
+
+Parameters:
+- `privateKey` - Your Private Key (required)
+- `rpc` - RPC endpoint (required)
+- `to` - Recipient address (required for single tx)
+- `amount` - ETH amount to send (required for single tx)
+- `transactions` - Array of {to, amount} objects (required for batch)
+- `delay` - Seconds between transactions (optional, default: 0)
+- `retries` - Max retry attempts per transaction (optional, default: 3)
 
 Response:
 ```json
@@ -413,6 +445,45 @@ Response:
   "jobId": "job_1732896000000_abc123",
   "status": "queued",
   "message": "ETH transfer started",
+  "total": 3,
   "statusUrl": "/batch/job_1732896000000_abc123"
 }
 ```
+
+Job status response (single tx):
+```json
+{
+  "hash": "0x...",
+  "from": "0xYourAddress",
+  "to": "0x...",
+  "amount": "0.01",
+  "blockNumber": 123456,
+  "status": 1,
+  "gasUsed": "21000"
+}
+```
+
+Job status response (batch):
+```json
+{
+  "success": true,
+  "total": 3,
+  "successful": 3,
+  "failed": 0,
+  "results": [
+    {
+      "index": 1,
+      "hash": "0x...",
+      "from": "0xYourAddress",
+      "to": "0xABC...",
+      "amount": "0.1",
+      "blockNumber": 123456,
+      "status": 1,
+      "gasUsed": "21000"
+    }
+  ],
+  "failedTransactions": []
+}
+```
+
+**Note:** The API uses intelligent nonce management to handle concurrent requests without conflicts. It automatically increases gas prices by 20% to prevent "replacement fee too low" errors.

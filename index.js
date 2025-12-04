@@ -298,11 +298,14 @@ app.post("/interact/send-raw", privateApiKey, async (req, res) => {
 // POST /interact/batch-send-raw - Send multiple raw transactions (async job)
 app.post("/interact/batch-send-raw", apiKeyAuth, async (req, res) => {
   try {
-    const { privateKey, rpc, transactions, count = 1, delay = 1.0, retries = 3, gasLimit, gasPrice } = req.body;
+    const { privateKey, rpc, transactions, delay = 1.0, retries = 3, gasLimit, gasPrice } = req.body;
 
     if (!privateKey || !rpc || !transactions || !Array.isArray(transactions)) {
       return res.status(400).json({ error: "Missing required fields: privateKey, rpc, transactions (array)" });
     }
+
+    // Calculate total based on each transaction's count
+    const total = transactions.reduce((sum, tx) => sum + (tx.count || 1), 0);
 
     const jobId = `job_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
     
@@ -310,10 +313,10 @@ app.post("/interact/batch-send-raw", apiKeyAuth, async (req, res) => {
       id: jobId,
       type: "batch-send-raw",
       status: "queued",
-      config: { privateKey, rpc, transactions, count, delay, retries, gasLimit, gasPrice },
+      config: { privateKey, rpc, transactions, delay, retries, gasLimit, gasPrice },
       createdAt: Date.now(),
       completed: 0,
-      total: transactions.length * count,
+      total,
       results: []
     });
 
@@ -329,7 +332,6 @@ app.post("/interact/batch-send-raw", apiKeyAuth, async (req, res) => {
             privateKey,
             rpc,
             transactions,
-            count,
             delay,
             retries,
             gasLimit,
@@ -358,6 +360,7 @@ app.post("/interact/batch-send-raw", apiKeyAuth, async (req, res) => {
       jobId, 
       status: "queued",
       message: "Batch send-raw started",
+      total,
       statusUrl: `/batch/${jobId}`
     });
   } catch (err) {
